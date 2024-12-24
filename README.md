@@ -8,7 +8,14 @@ An AI will monitor what you are looking at will tell you if you are getting dist
 
 You are working on a project and need to do some research. While doing research you see something unrelated but interesting so you click on it. An hour passes by and you realize you wasted your time. Next time with the program enabled an ai 'nanny' will watch what you are looking at and keep you on track.
 
-## Requirements
+## Setup
+
+1. `git clone https://github.com/klayza/screen-nanny`
+2. `pip install -r requirements.txt`
+3. set your OPENAI_API_KEY in .env
+4. `python src/main.py`
+
+## Development
 
 Modes:
 - Default: Checks if the current screen is a general time wasting app.
