@@ -1,0 +1,8 @@
+Pillow==10.2.0  # For screen capture
+psutil==5.9.8   # For system info
+python-dotenv==1.0.1  # For configuration
+pywin32
+customtkinter
+pynput==1.7.6  # For hotkey detection
+openai==1.12.0  # For AI vision analysis
+python-dotenv==1.0.1  # For API key management 
