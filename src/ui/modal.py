@@ -13,7 +13,7 @@ class ModalWindow:
         self.processing_thread.daemon = True
         self.processing_thread.start()
     
-    def show_message(self, message, duration=5):
+    def show_message(self, message, duration=15):
         """Queue a message to be shown"""
         self.message_queue.put((message, duration))
     

@@ -9,7 +9,7 @@ import threading
 from ai.vision_analyzer import VisionAnalyzer
 
 class ScreenNanny:
-    def __init__(self, capture_interval=20):
+    def __init__(self, capture_interval=60, idle_threshold=30):
         self.capture_interval = capture_interval
         self.screen_capture = ScreenCapture()
         self.system_monitor = SystemMonitor()
@@ -19,6 +19,7 @@ class ScreenNanny:
         self.focus_mode = False
         self.focus_description = None
         self.vision_analyzer = VisionAnalyzer()
+        self.idle_threshold = idle_threshold
         
         # Start hotkey listener
         self._setup_hotkey()
@@ -74,6 +75,8 @@ class ScreenNanny:
             "token_usage": self.vision_analyzer.get_token_usage(),
             "analysis_type": "window_title"
         })
+
+        print(analysis)
         
         if analysis["is_distracted"]:
             message = "⚠️ Distraction Detected!\n\n"
@@ -87,20 +90,25 @@ class ScreenNanny:
         """Start the monitoring loop"""
         try:
             while True:
-                # Capture screen
-                screenshot_path = self.screen_capture.capture()
+                # Check if system is idle
+                idle_time = self.system_monitor.get_idle_time()
+                is_idle = int(idle_time) > self.idle_threshold
+
+                if not is_idle:
+                    # Only monitor if system is active
+                    screenshot_path = self.screen_capture.capture()
+                    window_info = self.system_monitor.get_active_window_info()
+                    
+                    # Log everything
+                    self.logger.log_activity("screenshot", {"path": screenshot_path})
+                    self.logger.log_activity("window_info", window_info)
+                    
+                    # Analyze using window title
+                    self.analyze_and_warn(screenshot_path, window_info)
+                else:
+                    self.logger.log_activity("system_idle", {"idle_time": idle_time})
+                    print(f"System idle for {idle_time} seconds")
                 
-                # Get window info
-                window_info = self.system_monitor.get_active_window_info()
-                
-                # Log everything
-                self.logger.log_activity("screenshot", {"path": screenshot_path})
-                self.logger.log_activity("window_info", window_info)
-                
-                # Analyze using window title (cheaper method)
-                self.analyze_and_warn(screenshot_path, window_info)
-                
-                # Wait for next interval
                 time.sleep(self.capture_interval)
                 
         except KeyboardInterrupt:

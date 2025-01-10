@@ -29,7 +29,8 @@ class VisionAnalyzer:
         else:
             prompt = f"""You are a productivity assistant. Analyze this window information and determine if it appears to be:
             1. Productive work (coding, documents, email, music, etc.)
-            2. General time-wasting (social media, entertainment, etc.)
+            2. Time-wasting (social media, entertainment, etc.)
+            Note: things such as spotify, chatgpt, 
             
             Window Title: {window_info['window_title']}
             Process Name: {window_info['process_name']}
