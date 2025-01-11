@@ -28,16 +28,16 @@ class VisionAnalyzer:
             """
         else:
             prompt = f"""You are a productivity assistant. Analyze this window information and determine if it appears to be:
-            1. Productive work (coding, documents, email, music, etc.)
-            2. Time-wasting (social media, entertainment, etc.)
-            Note: things such as spotify, chatgpt, 
+            1. Productive/Neutral (coding, documents, email, music, learning, etc.) (any music or educational video is fine)
+            2. Distraction (social media, youtube, twitter, facebook, netflix, etc.) 
+            Note: Do not consider music as a distraction.
             
             Window Title: {window_info['window_title']}
             Process Name: {window_info['process_name']}
             
             Respond in this format:
             - Is_Distracted: [true/false]
-            - Reason: [brief explanation, 1 tiny sentence]
+            - Reason: [brief explanation, 1 tiny sentence, in australian accent]
             """
         
         response = self.client.chat.completions.create(
