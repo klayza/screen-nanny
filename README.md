@@ -16,6 +16,11 @@ You are working on a project and need to do some research. While doing research 
 4. `python src/main.py`
 
 ## Development
+Todo:
+- Option to flag "false distraction". 
+- Pre-AI keyword check
+- A global and user keylist for distracting windows and websites
+
 
 Modes:
 - Default: Checks if the current screen is a general time wasting app.

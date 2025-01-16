@@ -30,8 +30,11 @@ class VisionAnalyzer:
             prompt = f"""You are a productivity assistant. Analyze this window information and determine if it appears to be:
             1. Productive/Neutral (coding, documents, email, music, learning, etc.) (any music or educational video is fine)
             2. Distraction (social media, youtube, twitter, facebook, netflix, etc.) 
-            Note: Do not consider music as a distraction.
-            
+            Important: 
+            - Do not consider music as a distraction.
+            - ONLY when the title is CLEAR that it is a distraction, mark it as a distraction.
+            - Do not mark it as a distraction if it is a broad assumption.
+
             Window Title: {window_info['window_title']}
             Process Name: {window_info['process_name']}
             
