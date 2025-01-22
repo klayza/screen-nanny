@@ -6,3 +6,4 @@ __pycache__/
 logs/
 captures/
 venv/
+src/db.json

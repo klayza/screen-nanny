@@ -1,3 +1,4 @@
+import time
 import customtkinter as ctk
 import threading
 import queue
@@ -13,9 +14,9 @@ class ModalWindow:
         self.processing_thread.daemon = True
         self.processing_thread.start()
     
-    def show_message(self, message, duration=15):
+    def show_message(self, message, duration=5, is_fullscreen=True):
         """Queue a message to be shown"""
-        self.message_queue.put((message, duration))
+        self.message_queue.put((message, duration, is_fullscreen))
     
     def _process_messages(self):
         """Process messages from the queue"""
@@ -26,8 +27,8 @@ class ModalWindow:
         def check_queue():
             try:
                 while True:
-                    message, duration = self.message_queue.get_nowait()
-                    self._create_modal(message, duration)
+                    message, duration, is_fullscreen = self.message_queue.get_nowait()
+                    self._create_modal(message, duration, is_fullscreen)
             except queue.Empty:
                 pass
             
@@ -40,7 +41,7 @@ class ModalWindow:
         # Start the main loop
         self.window.mainloop()
     
-    def _create_modal(self, message, duration):
+    def _create_modal(self, message, duration, is_fullscreen=True):
         """Create and show a modal window"""
         # Close any existing modal
         if self.active_window:
@@ -51,9 +52,25 @@ class ModalWindow:
         self.active_window = modal
         
         # Configure window
+        if is_fullscreen:
+            modal.geometry("800x800")
+            modal.attributes('-fullscreen', True)
+        else:
+            modal.geometry("400x400")  # Set desired size for non-fullscreen
+            modal.attributes('-fullscreen', False)
+            # Center the window
+            modal.update_idletasks()  # Update "requested size" from geometry
+        
         modal.attributes('-topmost', True)
-        modal.attributes('-fullscreen', True)
-        modal.configure(fg_color='#2B2B2B')
+        modal.configure(fg_color='#2B2B2B')        
+        # Disable close button and block Alt+F4
+        modal.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        def block_alt_f4(event):
+            if event.keysym == 'F4' and (event.state & 0x20000):  # Alt key state
+                return 'break'
+        
+        modal.bind('<Key>', block_alt_f4)
         
         # Add message
         label = ctk.CTkLabel(
@@ -96,3 +113,9 @@ class ModalWindow:
         
         # Auto-close after duration
         modal.after(duration * 1000, modal.destroy)
+
+
+if __name__ == "__main__":
+    w = ModalWindow()
+    w.show_message("You're a bad boy!", 6, False)
+    time.sleep(10)

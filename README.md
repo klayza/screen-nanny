@@ -35,6 +35,10 @@ Functions:
 - Grab system info: Gets information such as active window, active browser tab, and for duration (if possible)
 - AI: Use a standard vision modal to interpret the current screen + system info + memory and return an action.
 - AI actions: The AI will use function calling to do the following: showMessage(message) which will open a dialog with x message
-- Logging: All pictures taken and their descriptions, system info with their timestamp
+
+## Features
+- Window time tracking: Tracks both total (lifetime) and consecutive duration for each window
+- Warning system with Alt+F4 protection
+- Focus mode toggle with Ctrl + Alt + F hotkey
 
 
