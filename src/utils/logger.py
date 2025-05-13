@@ -50,4 +50,45 @@ class ActivityLogger:
                 with open(self.json_log_path, 'w') as f:
                     json.dump([entry], f, indent=2)
         except Exception as e:
-            logging.error(f"Failed to write to JSON log: {str(e)}") 
+            logging.error(f"Failed to write to JSON log: {str(e)}")
+
+    def get_logs(self, start_time=None, end_time=None, activity_type=None):
+        """
+        Retrieve logs within a specified time range and/or activity type
+        
+        Args:
+            start_time (datetime, optional): Start time for filtering logs
+            end_time (datetime, optional): End time for filtering logs
+            activity_type (str, optional): Filter by activity type
+            
+        Returns:
+            list: List of log entries matching the criteria
+        """
+        try:
+            if not os.path.exists(self.json_log_path):
+                return []
+                
+            with open(self.json_log_path, 'r') as f:
+                logs = json.load(f)
+            
+            filtered_logs = []
+            for log in logs:
+                log_time = datetime.fromisoformat(log['timestamp'])
+                
+                # Apply time filters if specified
+                if start_time and log_time < start_time:
+                    continue
+                if end_time and log_time > end_time:
+                    continue
+                    
+                # Apply activity type filter if specified
+                if activity_type and log['type'] != activity_type:
+                    continue
+                    
+                filtered_logs.append(log)
+                
+            return filtered_logs
+            
+        except Exception as e:
+            logging.error(f"Failed to read logs: {str(e)}")
+            return []

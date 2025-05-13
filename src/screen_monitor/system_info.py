@@ -127,69 +127,72 @@ class SystemMonitor:
             self.logger.log_activity("window_durations", significant_windows)
         
         # Save current state to db
-        self.db.set('window_durations', self.window_durations)
+        # self.db.set('window_durations', self.window_durations)
         
         self.last_cleanup_time = current_time
-
+        
     def update_window_info(self):
         """Update window information and handle garbage collection"""
-        try:
-            window = win32gui.GetForegroundWindow()
-            window_title = win32gui.GetWindowText(window)
-            current_time = time.time()
+        window_data = self.get_active_window_info()
+        print(window_data)
+        print(self.get_system_metrics())
+        # try:
+        #     window = win32gui.GetForegroundWindow()
+        #     window_title = win32gui.GetWindowText(window)
+        #     current_time = time.time()
             
-            # Handle window switch
-            if window_title != self.current_window_title:
-                # Update previous window duration if exists
-                if self.current_window_title and self.current_window_start:
-                    duration = int(current_time - self.current_window_start)
-                    # Ensure window exists in durations
-                    if self.current_window_title not in self.window_durations:
-                        self.window_durations[self.current_window_title] = {
-                            'total': 0,
-                            'consecutive': 0
-                        }
-                    self.window_durations[self.current_window_title]['total'] += duration
-                    self.window_durations[self.current_window_title]['consecutive'] = 0
+        #     # Handle window switch
+        #     if window_title != self.current_window_title:
+        #         # Update previous window duration if exists
+        #         if self.current_window_title and self.current_window_start:
+        #             duration = int(current_time - self.current_window_start)
+        #             # Ensure window exists in durations
+        #             if self.current_window_title not in self.window_durations:
+        #                 self.window_durations[self.current_window_title] = {
+        #                     'total': 0,
+        #                     'consecutive': 0
+        #                 }
+        #             self.window_durations[self.current_window_title]['total'] += duration
+        #             self.window_durations[self.current_window_title]['consecutive'] = 0
                 
-                # Initialize new window if needed
-                if window_title not in self.window_durations:
-                    self.window_durations[window_title] = {
-                        'total': 0,
-                        'consecutive': 0
-                    }
+        #         # Initialize new window if needed
+        #         if window_title not in self.window_durations:
+        #             self.window_durations[window_title] = {
+        #                 'total': 0,
+        #                 'consecutive': 0
+        #             }
                 
-                self.current_window_start = current_time
-                self.current_window_title = window_title
+        #         self.current_window_start = current_time
+        #         self.current_window_title = window_title
             
-            # Update consecutive duration for current window
-            if self.current_window_title:
+        #     # Update consecutive duration for current window
+        #     if self.current_window_title:
                 
-                # Add defensive check
-                if self.current_window_title not in self.window_durations:
-                    print(f"Warning: Current window not in durations: {self.current_window_title}")
-                    self.window_durations[self.current_window_title] = {
-                        'total': 0,
-                        'consecutive': 0
-                    }
+        #         # Add defensive check
+        #         if self.current_window_title not in self.window_durations:
+        #             print(f"Warning: Current window not in durations: {self.current_window_title}")
+        #             self.window_durations[self.current_window_title] = {
+        #                 'total': 0,
+        #                 'consecutive': 0
+        #             }
                 
-                consecutive_duration = current_time - self.current_window_start
-                self.window_durations[self.current_window_title]['consecutive'] = int(consecutive_duration)
+        #         consecutive_duration = current_time - self.current_window_start
+        #         self.window_durations[self.current_window_title]['consecutive'] = int(consecutive_duration)
             
-            # Run cleanup if needed
-            self.cleanup_window_durations()
+        #     # Run cleanup if needed
+        #     self.cleanup_window_durations()
             
-            return {
-                "window_title": window_title,
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            print(f"Error updating window info: {e}")
-            print(f"Current window title: {window_title if 'window_title' in locals() else 'N/A'}")
-            print(f"Window durations: {self.window_durations}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-            return None
+        #     return {
+        #         "window_title": window_title,
+        #         "timestamp": datetime.now().isoformat()
+        #     }
+        # except Exception as e:
+        #     print(f"Error updating window info: {e}")
+        #     print(f"Current window title: {window_title if 'window_title' in locals() else 'N/A'}")
+        #     print(f"Window durations: {self.window_durations}")
+        #     import traceback
+        #     print(f"Traceback: {traceback.format_exc()}")
+        #     return None
 
     def get_window_durations(self, window_title):
         """Get the total and consecutive duration for a window"""
@@ -216,8 +219,9 @@ class SystemMonitor:
 
 if __name__ == "__main__":
     st = SystemMonitor()
-    while True:
-        st.update_window_info()
-        time.sleep(1)
-        st.pretty_print_window_times(max_items=3)
-        print("=============")
+    print(st.get_active_window_info())
+    # while True:
+    #     st.update_window_info()
+    #     time.sleep(1)
+    #     st.pretty_print_window_times(max_items=3)
+    #     print("=============")

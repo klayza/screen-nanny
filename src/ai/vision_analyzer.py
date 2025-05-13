@@ -1,7 +1,9 @@
 from openai import OpenAI
 import base64
 import os
+from screen_monitor.system_info import SystemMonitor 
 from dotenv import load_dotenv
+
 
 class VisionAnalyzer:
     def __init__(self):
@@ -12,19 +14,36 @@ class VisionAnalyzer:
             "prompt_tokens": 0,
             "completion_tokens": 0
         }
+
+    def format_window_info(self, window_info):
+        """Format window information for display"""
+        return f"""
+        Window Title: {window_info['window_title']}
+        Process Name: {window_info['process_name']}
+        Active Time: {window_info['active_time']} sec
+        """
     
     def analyze_window_title(self, window_info, focus_description=None):
         """Analyze window title and process name to determine if it's distracting"""
+        i = SystemMonitor()
+        i.update_window_info()
+        i.pretty_print_window_times(max_items=5)
+        print("==========")
         if focus_description:
             prompt = f"""You are a productivity assistant. The user is trying to focus on: {focus_description}
-            
+
+            Important: 
+            - Do not consider music as a distraction.
+            - ONLY when the title is CLEAR that it is a distraction, mark it as a distraction.
+            - Do not mark it as a distraction if it is a broad assumption.
+
             Analyze this window information and determine if it's aligned with their goal:
-            Window Title: {window_info['window_title']}
-            Process Name: {window_info['process_name']}
+            {self.format_window_info(window_info)}
             
             Respond in this format:
             - Is_Distracted: [true/false]
             - Reason: [brief explanation]
+            - Timeout: [lock the user out for x seconds. ex: 5, 20, max 120]
             """
         else:
             prompt = f"""You are a productivity assistant. Analyze this window information and determine if it appears to be:
@@ -35,12 +54,12 @@ class VisionAnalyzer:
             - ONLY when the title is CLEAR that it is a distraction, mark it as a distraction.
             - Do not mark it as a distraction if it is a broad assumption.
 
-            Window Title: {window_info['window_title']}
-            Process Name: {window_info['process_name']}
+            {self.format_window_info(window_info)}
             
             Respond in this format:
             - Is_Distracted: [true/false]
             - Reason: [brief explanation, 1 tiny sentence, in australian accent]
+            - Timeout: [lock the user out for x seconds. ex: 5, 20, 120]
             """
         
         response = self.client.chat.completions.create(
@@ -65,6 +84,10 @@ class VisionAnalyzer:
     
     def analyze_screen(self, image_path, focus_description=None):
         """Analyze screenshot and determine if it's distracting (expensive fallback method)"""
+
+        # DISABLED [NOT PRACTICAL]
+        return
+
         base64_image = self.encode_image(image_path)
         
         if focus_description:
@@ -76,6 +99,7 @@ class VisionAnalyzer:
             Respond in this format:
             - Is_Distracted: [true/false]
             - Reason: [brief explanation]
+            - Timeout: [lock the user out for x seconds. ex: 5, 20, 120]
             """
         else:
             prompt = """You are a productivity assistant. Analyze this screenshot and determine if the content appears to be:
@@ -85,6 +109,7 @@ class VisionAnalyzer:
             Respond in this format:
             - Is_Distracted: [true/false]
             - Reason: [brief explanation]
+            - Timeout: [lock the user out for x seconds. ex: 5, 20, 120]
             """
         
         response = self.client.chat.completions.create(
@@ -118,7 +143,8 @@ class VisionAnalyzer:
         lines = content.split('\n')
         result = {
             "is_distracted": False,
-            "reason": ""
+            "reason": "",
+            "timeout": 10
         }
         
         for line in lines:
@@ -126,6 +152,8 @@ class VisionAnalyzer:
                 result["is_distracted"] = "true" in line.lower()
             elif "Reason:" in line:
                 result["reason"] = line.split("Reason:")[1].strip()
+            elif "Timeout:" in line:
+                result["timeout"] = int(line.split("Timeout:")[1].strip())
         
         return result
     

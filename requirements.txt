@@ -9,3 +9,4 @@ python-dotenv==1.0.1  # For API key management
 
 # For macOS
 pyobjc-framework-Quartz
+keyboard

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Activity Dashboard</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			body {
+				font-family: 'Inter', sans-serif;
+				background-color: #f3f4f6; /* Tailwind bg-gray-100 */
+			}
+			.card {
+				background-color: white;
+				border-radius: 0.75rem; /* Tailwind rounded-xl */
+				box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Tailwind shadow-lg */
+				padding: 1.5rem; /* Tailwind p-6 */
+				margin-bottom: 1.5rem; /* Tailwind mb-6 */
+			}
+			.card-title {
+				font-size: 1.25rem; /* Tailwind text-xl */
+				font-weight: 600; /* Tailwind font-semibold */
+				color: #1f2937; /* Tailwind text-gray-800 */
+				margin-bottom: 1rem; /* Tailwind mb-4 */
+			}
+			.list-item {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 0.75rem 0; /* Tailwind py-3 */
+				border-bottom: 1px solid #e5e7eb; /* Tailwind border-gray-200 */
+			}
+			.list-item:last-child {
+				border-bottom: none;
+			}
+			.item-title {
+				color: #374151; /* Tailwind text-gray-700 */
+				font-weight: 500; /* Tailwind font-medium */
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				max-width: 70%; /* Adjust as needed */
+			}
+			.item-detail {
+				color: #6b7280; /* Tailwind text-gray-500 */
+				font-size: 0.875rem; /* Tailwind text-sm */
+			}
+			.item-time {
+				color: #10b981; /* Tailwind text-emerald-500 */
+				font-weight: 600; /* Tailwind font-semibold */
+			}
+			.distraction-item {
+				background-color: #fffbeb; /* Tailwind bg-yellow-50 */
+				border-left: 4px solid #f59e0b; /* Tailwind border-yellow-400 */
+				padding: 1rem; /* Tailwind p-4 */
+				border-radius: 0.375rem; /* Tailwind rounded-md */
+				margin-bottom: 0.75rem; /* Tailwind mb-3 */
+			}
+			.distraction-title {
+				font-weight: 600;
+				color: #78350f; /* Tailwind text-yellow-800 */
+			}
+			.distraction-reason {
+				font-size: 0.875rem; /* text-sm */
+				color: #92400e; /* text-yellow-700 */
+				margin-top: 0.25rem; /* mt-1 */
+			}
+		</style>
+	</head>
+	<body class="text-gray-800">
+		<div class="container mx-auto p-4 md:p-8 max-w-5xl">
+			<header class="mb-8 text-center">
+				<h1 class="text-4xl font-bold text-gray-700">Activity Dashboard</h1>
+				<p class="text-lg text-gray-500">{{ today_date }}</p>
+			</header>
+
+			{% if error_message %}
+			<div class="card bg-red-100 border-l-4 border-red-500 text-red-700">
+				<p class="font-bold">Error</p>
+				<p>{{ error_message }}</p>
+			</div>
+			{% elif message %}
+			<div class="card bg-blue-100 border-l-4 border-blue-500 text-blue-700">
+				<p class="font-bold">Information</p>
+				<p>{{ message }}</p>
+			</div>
+			{% endif %} {% if not error_message %}
+			<div class="card">
+				<h2 class="card-title">Today's Summary</h2>
+				<div class="text-3xl font-bold text-emerald-600 text-center py-4">
+					Total Screen Time: {{ total_time_formatted if total_time_formatted else 'N/A' }}
+				</div>
+			</div>
+
+			<div class="grid md:grid-cols-2 gap-6">
+				<div class="card">
+					<h2 class="card-title">Top 10 Window Titles</h2>
+					{% if top_windows %}
+					<ul>
+						{% for item in top_windows %}
+						<li class="list-item">
+							<div class="flex-grow overflow-hidden mr-2">
+								<p class="item-title" title="{{ item.title }} ({{ item.process_name }})">
+									{{ item.title }}
+								</p>
+								<p class="item-detail">{{ item.process_name }}</p>
+							</div>
+							<span class="item-time">{{ item.duration_formatted }}</span>
+						</li>
+						{% endfor %}
+					</ul>
+					{% else %}
+					<p class="text-gray-500">No window title data available.</p>
+					{% endif %}
+				</div>
+
+				<div class="card">
+					<h2 class="card-title">Top 10 Processes</h2>
+					{% if top_processes %}
+					<ul>
+						{% for item in top_processes %}
+						<li class="list-item">
+							<p class="item-title" title="{{ item.process_name }}">{{ item.process_name }}</p>
+							<span class="item-time">{{ item.duration_formatted }}</span>
+						</li>
+						{% endfor %}
+					</ul>
+					{% else %}
+					<p class="text-gray-500">No process data available.</p>
+					{% endif %}
+				</div>
+			</div>
+
+			<div class="card">
+				<h2 class="card-title">Distraction Log ({{ distractions_list|length }})</h2>
+				{% if distractions_list %}
+				<div class="space-y-3 max-h-96 overflow-y-auto pr-2">
+					{% for item in distractions_list %}
+					<div class="distraction-item">
+						<p class="distraction-title">
+							<span class="text-sm text-gray-500 mr-2">[{{ item.timestamp_display }}]</span>
+							{{ item.title }}
+						</p>
+						<p class="text-xs text-gray-400 ml-1">{{ item.process }}</p>
+						{% if item.reason %}
+						<p class="distraction-reason">Reason: {{ item.reason }}</p>
+						{% endif %}
+					</div>
+					{% endfor %}
+				</div>
+				{% else %}
+				<p class="text-gray-500">No distractions logged for today. Great job!</p>
+				{% endif %}
+			</div>
+			{% endif %}
+
+			<footer class="text-center mt-12 text-sm text-gray-400">
+				<p>Activity Tracker v1.0</p>
+			</footer>
+		</div>
+	</body>
+</html>
