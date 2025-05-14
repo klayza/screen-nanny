@@ -16,29 +16,32 @@ You are working on a project and need to do some research. While doing research 
 4. `python src/main.py`
 
 ## Development
-Todo:
-- Option to flag "false distraction". 
-- Pre-AI keyword check
-- A global and user keylist for distracting windows and websites
 
+Todo:
+
+- alert for break times
+- alert for bed time
+- fix focus mode
+- add focus mode to web app
 
 Modes:
+
 - Default: Checks if the current screen is a general time wasting app.
 - Focus: Start a focus session by giving the ai a description of what you are doing.
 
 Functions:
+
 - Display modal: Must display full screen messages that capture the user's attention.
 - Text entry: Will allow the user to enter a description of their goal to enable a focus session. Shown on the display modal.
 - Hotey for starting focus session: When a certain hotkey is pushed it will open the focus dialog.
-- Memory: Allow the ai to keep track of the user screen history up to a time. The default will be an hour. 
-- Screen capture: A picture of the entire screen will be taken every 60 seconds (default value) 
+- Memory: Allow the ai to keep track of the user screen history up to a time. The default will be an hour.
+- Screen capture: A picture of the entire screen will be taken every 60 seconds (default value)
 - Grab system info: Gets information such as active window, active browser tab, and for duration (if possible)
 - AI: Use a standard vision modal to interpret the current screen + system info + memory and return an action.
 - AI actions: The AI will use function calling to do the following: showMessage(message) which will open a dialog with x message
 
 ## Features
+
 - Window time tracking: Tracks both total (lifetime) and consecutive duration for each window
 - Warning system with Alt+F4 protection
 - Focus mode toggle with Ctrl + Alt + F hotkey
-
-

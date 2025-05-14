@@ -1,326 +1,256 @@
-import os
 import json
-from flask import Flask, render_template, request, jsonify
-from datetime import datetime, timedelta, date
+import os
+from flask import Flask, render_template, request
+from datetime import datetime, timedelta
 from collections import defaultdict
-import re
+import pytz # For timezone handling, if needed in the future
 
 app = Flask(__name__)
 
-# --- Configuration ---
-LOG_FILE_PATH = os.path.join("logs", "data_activity.json")
-# For browsers, we'll list them by process name in the process list,
-# and window titles will show the full title.
-BROWSER_PROCESSES = ["firefox.exe", "chrome.exe", "msedge.exe", "safari.exe"] # Add more if needed
-
 # --- Helper Functions ---
-def format_ms_to_readable(ms):
-    """Converts milliseconds to a human-readable string (e.g., 1h 15m 30s)."""
-    if ms is None or ms < 0:
-        return "0s"
+def format_timedelta(td):
+    """Formats a timedelta object into a human-readable string (Xh Ym Zs)."""
+    if td is None:
+        return "N/A"
+    total_seconds = int(td.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
     
-    s = round(ms / 1000)
-    if s == 0 and ms > 0: # for very short durations like 500ms
-        return f"{ms}ms"
-    if s == 0:
-        return "0s"
-
-    m, s = divmod(s, 60)
-    h, m = divmod(m, 60)
-    d, h = divmod(h, 24)
-
     parts = []
-    if d > 0:
-        parts.append(f"{d}d")
-    if h > 0:
-        parts.append(f"{h}h")
-    if m > 0:
-        parts.append(f"{m}m")
-    if s > 0 or not parts: # Always show seconds if other parts are zero, or if it's the only unit
-        parts.append(f"{s}s")
-    
-    return " ".join(parts)
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts) if parts else "0s"
 
-def parse_log_timestamp(line_timestamp_str):
-    """Parses the timestamp at the beginning of a log line."""
+def format_datetime_obj(dt_obj, format_str='%Y-%m-%d %H:%M:%S'):
+    """Formats a datetime object to a string."""
+    if dt_obj is None:
+        return "N/A"
+    return dt_obj.strftime(format_str)
+
+def load_and_process_data(filepath, selected_date_str=None):
+    """Loads and processes the activity log data for a selected date."""
     try:
-        # Example: 2025-05-06 00:05:33,873
-        return datetime.strptime(line_timestamp_str, "%Y-%m-%d %H:%M:%S,%f")
-    except ValueError:
-        # Try without milliseconds if that fails
-        try:
-            return datetime.strptime(line_timestamp_str, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            app.logger.warning(f"Could not parse log line timestamp: {line_timestamp_str}")
-            return None
-
-def get_stats_for_date_range(start_date_obj, end_date_obj):
-    """
-    Processes logs for a given date range and aggregates statistics.
-    Returns a dictionary with aggregated stats.
-    """
-    # Initialize aggregators for the entire period
-    period_window_durations = defaultdict(lambda: {"total_duration_ms": 0, "process_names": set()})
-    period_process_durations = defaultdict(int)
-    period_distractions = []
-    period_total_time_ms = 0
-
-    # Iterate through each day in the range
-    current_date = start_date_obj
-    while current_date <= end_date_obj:
-        daily_stats = get_daily_stats(current_date)
-        
-        period_total_time_ms += daily_stats.get("total_time_ms", 0)
-
-        # Aggregate window durations
-        if daily_stats.get("raw_window_durations"):
-            for title, data in daily_stats["raw_window_durations"].items():
-                duration_ms = data.get("total", 0)
-                period_window_durations[title]["total_duration_ms"] += duration_ms
-                process_name = daily_stats.get("raw_window_to_process_map", {}).get(title, "Unknown Process")
-                period_window_durations[title]["process_names"].add(process_name)
-        
-        # Aggregate distractions
-        period_distractions.extend(daily_stats.get("distractions_list", []))
-        
-        current_date += timedelta(days=1)
-
-    # Post-process aggregated window data to determine primary process name and sort
-    processed_period_windows = []
-    for title, data in period_window_durations.items():
-        # Choose one process name, e.g., the first one alphabetically or just join them
-        process_name_display = " / ".join(sorted(list(data["process_names"]))) if data["process_names"] else "Unknown Process"
-        processed_period_windows.append({
-            "title": title,
-            "duration_ms": data["total_duration_ms"],
-            "duration_formatted": format_ms_to_readable(data["total_duration_ms"]),
-            "process_name": process_name_display
-        })
-    
-    # Sort windows by duration
-    processed_period_windows.sort(key=lambda x: x["duration_ms"], reverse=True)
-
-    # Aggregate process durations from the detailed window data
-    for window_data in processed_period_windows:
-        # For simplicity, if multiple processes are listed, attribute to the first one for process summary
-        # A more accurate way would be to get process directly from window_info if available
-        # However, window_durations is keyed by title.
-        # Let's rebuild process_durations from aggregated_window_durations
-        # This part is a bit tricky if a window title maps to multiple processes over time.
-        # We'll use the process names associated during aggregation.
-        first_process_in_set = next(iter(period_window_durations[window_data["title"]]["process_names"]), "Unknown Process")
-        if first_process_in_set != "Unknown Process": # Avoid double counting if split
-             period_process_durations[first_process_in_set] += window_data["duration_ms"]
-
-
-    # Sort processes by duration
-    sorted_period_processes = sorted(period_process_durations.items(), key=lambda item: item[1], reverse=True)
-    top_processes_formatted = [{
-        "process_name": p_name,
-        "duration_ms": dur_ms,
-        "duration_formatted": format_ms_to_readable(dur_ms)
-    } for p_name, dur_ms in sorted_period_processes]
-
-
-    return {
-        "start_date": start_date_obj.strftime("%Y-%m-%d"),
-        "end_date": end_date_obj.strftime("%Y-%m-%d"),
-        "total_time_over_period_ms": period_total_time_ms,
-        "total_time_over_period_formatted": format_ms_to_readable(period_total_time_ms),
-        "top_windows_over_period": processed_period_windows[:10], # Top 10 for API
-        "top_processes_over_period": top_processes_formatted[:10], # Top 10 for API
-        "distractions_over_period": sorted(period_distractions, key=lambda x: x.get("timestamp_iso", ""), reverse=True)
-    }
-
-
-def get_daily_stats(target_date_obj):
-    """
-    Parses the log file for a specific date and extracts statistics.
-    target_date_obj: a datetime.date object.
-    """
-    latest_daily_window_durations = None
-    daily_window_to_process_map = {}
-    daily_distractions = []
-    last_window_info_for_linking = None # To link ai_analysis to its window_info
-
-    try:
-        with open(LOG_FILE_PATH, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Extract timestamp from the beginning of the line
-                # Format: YYYY-MM-DD HH:MM:SS,ms - 
-                match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d{3})?)", line)
-                if not match:
-                    continue
-                
-                log_line_timestamp_str = match.group(1)
-                log_datetime = parse_log_timestamp(log_line_timestamp_str)
-
-                if not log_datetime or log_datetime.date() != target_date_obj:
-                    continue
-
-                # Process different types of log entries
-                try:
-                    if "window_info:" in line:
-                        json_str = line.split("window_info:", 1)[1].strip()
-                        info = json.loads(json_str)
-                        daily_window_to_process_map[info["window_title"]] = info["process_name"]
-                        last_window_info_for_linking = {
-                            "title": info["window_title"],
-                            "process": info["process_name"],
-                            "timestamp_iso": info["timestamp"], # ISO format from JSON
-                            "timestamp_display": datetime.fromisoformat(info["timestamp"]).strftime("%H:%M:%S")
-                        }
-                    elif "ai_analysis:" in line:
-                        json_str = line.split("ai_analysis:", 1)[1].strip()
-                        analysis_data = json.loads(json_str)
-                        if analysis_data.get("analysis", {}).get("is_distracted") and last_window_info_for_linking:
-                            daily_distractions.append({
-                                **last_window_info_for_linking,
-                                "reason": analysis_data.get("analysis", {}).get("reason", "No reason provided")
-                            })
-                    elif "window_durations:" in line:
-                        json_str = line.split("window_durations:", 1)[1].strip()
-                        # This will overwrite, keeping only the latest for the day
-                        latest_daily_window_durations = json.loads(json_str) 
-                except json.JSONDecodeError as e:
-                    app.logger.error(f"JSON parsing error in line: {line}. Error: {e}")
-                except Exception as e:
-                    app.logger.error(f"Generic error processing line: {line}. Error: {e}")
-
-
+        with open(filepath, 'r') as f:
+            all_logs_raw = json.load(f)
     except FileNotFoundError:
-        app.logger.error(f"Log file not found: {LOG_FILE_PATH}")
-        return {"error": "Log file not found."} # Return error state
-    except Exception as e:
-        app.logger.error(f"Could not read log file: {e}")
-        return {"error": f"Could not read log file: {e}"}
+        return {"error": "Data file not found. Please create logs/activity_data.json"}
+    except json.JSONDecodeError:
+        return {"error": "Error decoding JSON data. Please check the file format."}
 
-    # --- Post-processing for the day ---
-    if latest_daily_window_durations is None:
-        # No window_durations data for this day
+    if not isinstance(all_logs_raw, list):
+        return {"error": "Data should be a list of log entries."}
+
+    # Parse all logs and extract available dates
+    parsed_logs = []
+    available_dates = set()
+    for log_raw in all_logs_raw:
+        try:
+            ts_obj = datetime.fromisoformat(log_raw['timestamp'])
+            parsed_logs.append({**log_raw, 'timestamp_obj': ts_obj})
+            available_dates.add(ts_obj.strftime('%Y-%m-%d'))
+        except (KeyError, TypeError, ValueError) as e:
+            # Skip logs with invalid timestamps but log an issue (optional)
+            print(f"Skipping log due to timestamp error: {e} in {log_raw}") # Server-side log
+            continue
+    
+    sorted_available_dates = sorted(list(available_dates), reverse=True)
+
+    if not parsed_logs:
         return {
-            "date": target_date_obj.strftime("%Y-%m-%d"),
-            "total_time_ms": 0,
-            "total_time_formatted": format_ms_to_readable(0),
-            "top_windows": [],
-            "top_processes": [],
-            "distractions_list": sorted(daily_distractions, key=lambda x: x.get("timestamp_iso",""), reverse=True),
-            "raw_window_durations": {}, # Empty if none found
-            "raw_window_to_process_map": daily_window_to_process_map, # Might have data even if durations don't
-            "message": "No window duration data found for this day."
+            "error": "No valid log entries found in the data file.",
+            "available_dates": [],
+            "current_selected_date": "N/A"
         }
 
-    total_time_ms_today = sum(data.get("total", 0) for data in latest_daily_window_durations.values())
+    # Determine current selected date
+    if selected_date_str and selected_date_str in available_dates:
+        current_selected_date = selected_date_str
+    elif sorted_available_dates:
+        current_selected_date = sorted_available_dates[0] # Default to the latest date with data
+    else: # Should not happen if parsed_logs is not empty, but as a fallback
+        current_selected_date = datetime.now().strftime('%Y-%m-%d') # Fallback to actual today
 
-    # Prepare top windows list
-    window_summary_list = []
-    for title, data in latest_daily_window_durations.items():
-        duration_ms = data.get("total", 0)
-        process_name = daily_window_to_process_map.get(title, "Unknown Process")
-        window_summary_list.append({
-            "title": title,
-            "duration_ms": duration_ms,
-            "duration_formatted": format_ms_to_readable(duration_ms),
-            "process_name": process_name
-        })
-    window_summary_list.sort(key=lambda x: x["duration_ms"], reverse=True)
+    # Filter logs for the selected date
+    logs_for_day = [log for log in parsed_logs if log['timestamp_obj'].strftime('%Y-%m-%d') == current_selected_date]
+    logs_for_day.sort(key=lambda x: x['timestamp_obj']) # Ensure logs for the day are sorted
 
-    # Prepare top processes list
-    process_time_aggregation = defaultdict(int)
-    for title, data in latest_daily_window_durations.items():
-        duration_ms = data.get("total", 0)
-        process_name = daily_window_to_process_map.get(title, "Unknown Process")
-        if process_name != "Unknown Process":
-             process_time_aggregation[process_name] += duration_ms
-    
-    process_summary_list = [{
-        "process_name": p_name,
-        "duration_ms": dur_ms,
-        "duration_formatted": format_ms_to_readable(dur_ms)
-    } for p_name, dur_ms in sorted(process_time_aggregation.items(), key=lambda item: item[1], reverse=True)]
+    # --- Initialize variables for daily data ---
+    focus_sessions = []
+    app_usage_data = defaultdict(lambda: defaultdict(timedelta))
+    distractions = []
+    timeline_events = []
+    total_focus_duration = timedelta()
+    total_screen_time = timedelta()
+    day_start_time = None
+    day_end_time = None
 
-    return {
-        "date": target_date_obj.strftime("%Y-%m-%d"),
-        "total_time_ms": total_time_ms_today,
-        "total_time_formatted": format_ms_to_readable(total_time_ms_today),
-        "top_windows": window_summary_list[:10], # Top 10
-        "top_processes": process_summary_list[:10], # Top 10
-        "distractions_list": sorted(daily_distractions, key=lambda x: x.get("timestamp_iso",""), reverse=True),
-        "raw_window_durations": latest_daily_window_durations,
-        "raw_window_to_process_map": daily_window_to_process_map
+    if logs_for_day:
+        day_start_time = logs_for_day[0]['timestamp_obj']
+        day_end_time = logs_for_day[-1]['timestamp_obj']
+
+        # --- Process Focus Sessions for the day ---
+        current_focus_session = None
+        for log in logs_for_day:
+            timestamp = log['timestamp_obj']
+            if log['type'] == 'focus_mode_start':
+                current_focus_session = {
+                    'start': timestamp,
+                    'description': log.get('data', {}).get('description', 'No description')
+                }
+            elif log['type'] == 'focus_mode_end' and current_focus_session:
+                # Ensure the focus session started on the same day or before, and ended on this day
+                if current_focus_session['start'].strftime('%Y-%m-%d') <= current_selected_date:
+                    current_focus_session['end'] = timestamp
+                    duration = current_focus_session['end'] - current_focus_session['start']
+                    current_focus_session['duration'] = duration
+                    current_focus_session['duration_str'] = format_timedelta(duration)
+                    total_focus_duration += duration
+                    focus_sessions.append(current_focus_session)
+                current_focus_session = None 
+        # If a focus session is still active at the end of the day's logs (or data)
+        if current_focus_session and current_focus_session['start'].strftime('%Y-%m-%d') == current_selected_date:
+             # Optionally, mark as ongoing or calculate duration up to day_end_time
+             # For simplicity, we'll only count fully ended sessions within the day or those ending on the day.
+             pass
+
+
+        # --- Process Application Usage for the day ---
+        for i in range(len(logs_for_day) -1):
+            current_log = logs_for_day[i]
+            next_log = logs_for_day[i+1]
+            if current_log['type'] == 'window_info':
+                try:
+                    start_time = current_log['timestamp_obj']
+                    end_time = next_log['timestamp_obj']
+                    duration = end_time - start_time
+                    if duration > timedelta(seconds=0):
+                        data = current_log.get('data', {})
+                        process_name = data.get('process_name', 'Unknown Process')
+                        window_title = data.get('window_title', 'Unknown Title')
+                        app_usage_data[process_name][window_title] += duration
+                        total_screen_time += duration
+                except (KeyError, TypeError, ValueError):
+                    continue
+        
+        # --- Process AI Analysis for Distractions for the day ---
+        for i, log in enumerate(logs_for_day):
+            if log['type'] == 'ai_analysis':
+                analysis_data = log.get('data', {}).get('analysis', {})
+                if analysis_data.get('is_distracted', False):
+                    window_title, process_name = "N/A", "N/A"
+                    for j in range(i - 1, -1, -1):
+                        if logs_for_day[j]['type'] == 'window_info':
+                            window_data = logs_for_day[j].get('data', {})
+                            window_title = window_data.get('window_title', 'N/A')
+                            process_name = window_data.get('process_name', 'N/A')
+                            break
+                    distractions.append({
+                        'timestamp': format_datetime_obj(log['timestamp_obj']),
+                        'reason': analysis_data.get('reason', 'No reason provided'),
+                        'timeout': analysis_data.get('timeout', 0),
+                        'window_title': window_title,
+                        'process_name': process_name,
+                        'analysis_type': log.get('data', {}).get('analysis_type', 'N/A'),
+                        'token_usage': log.get('data', {}).get('token_usage', {})
+                    })
+
+        # --- Create Timeline Events for the day ---
+        for log_entry in logs_for_day:
+            ts_str = format_datetime_obj(log_entry['timestamp_obj'])
+            event_type = log_entry['type'].replace('_', ' ').title()
+            details, data = "", log_entry.get('data', {})
+            if log_entry['type'] == 'focus_mode_start': details = f"Desc: {data.get('description', 'N/A')}"
+            elif log_entry['type'] == 'focus_mode_end': details = "Focus session ended."
+            elif log_entry['type'] == 'window_info': details = f"App: {data.get('process_name', 'N/A')} - Title: {data.get('window_title', 'N/A')}"
+            elif log_entry['type'] == 'ai_analysis':
+                analysis = data.get('analysis', {})
+                status = "Distracted" if analysis.get('is_distracted') else "Not Distracted"
+                reason = analysis.get('reason', '')
+                details = f"Status: {status}. Reason: {reason[:100]}{'...' if len(reason) > 100 else ''}"
+            timeline_events.append({'timestamp_str': ts_str, 'type': event_type, 'details': details})
+
+    # --- Prepare app_usage_detailed for the template (for the selected day) ---
+    app_usage_detailed = []
+    all_app_total_seconds_today = []
+    for process_name, titles_data in app_usage_data.items():
+        app_total_duration_obj = timedelta()
+        processed_titles = []
+        for window_title, duration_obj in titles_data.items():
+            app_total_duration_obj += duration_obj
+            processed_titles.append({
+                'title': window_title,
+                'duration_str': format_timedelta(duration_obj),
+                'duration_seconds': int(duration_obj.total_seconds())
+            })
+        processed_titles.sort(key=lambda x: x['duration_seconds'], reverse=True)
+        app_total_seconds_val = int(app_total_duration_obj.total_seconds())
+        if app_total_seconds_val > 0:
+            all_app_total_seconds_today.append(app_total_seconds_val)
+            app_usage_detailed.append({
+                'name': process_name,
+                'total_duration_str': format_timedelta(app_total_duration_obj),
+                'total_duration_seconds': app_total_seconds_val,
+                'titles': processed_titles
+            })
+    app_usage_detailed.sort(key=lambda x: x['total_duration_seconds'], reverse=True)
+    max_overall_duration_seconds_today = max(all_app_total_seconds_today) if all_app_total_seconds_today else 1
+
+    summary_stats = {
+        'total_focus_duration_str': format_timedelta(total_focus_duration),
+        'total_screen_time_str': format_timedelta(total_screen_time),
+        'total_distractions': len(distractions),
+        'day_start_time_str': format_datetime_obj(day_start_time, '%H:%M:%S') if day_start_time else "N/A",
+        'day_end_time_str': format_datetime_obj(day_end_time, '%H:%M:%S') if day_end_time else "N/A",
     }
 
-# --- Flask Routes ---
+    return {
+        'focus_sessions': sorted(focus_sessions, key=lambda x: x['start'], reverse=True),
+        'app_usage_detailed': app_usage_detailed,
+        'max_overall_duration_seconds': max_overall_duration_seconds_today,
+        'distractions': sorted(distractions, key=lambda x: x['timestamp'], reverse=True),
+        'summary_stats': summary_stats,
+        'timeline_events': timeline_events, # Already sorted by timestamp for the day
+        'available_dates': sorted_available_dates,
+        'current_selected_date': current_selected_date
+    }
+
 @app.route('/')
 def index():
-    """Main page displaying today's statistics."""
-    today_obj = date.today()
-    # For testing with provided sample data date:
-    # today_obj = date(2025, 5, 6) 
+    data_filepath = os.path.join(os.path.dirname(__file__), 'logs', 'activity_data.json')
+    selected_date_str = request.args.get('date') # Get date from URL query parameter
     
-    stats = get_daily_stats(today_obj)
-    if "error" in stats:
-        return render_template('index.html', error_message=stats["error"], today_date=today_obj.strftime("%Y-%m-%d"))
-    
-    return render_template('index.html', **stats, today_date=today_obj.strftime("%A, %B %d, %Y"))
+    processed_data = load_and_process_data(data_filepath, selected_date_str)
 
-@app.route('/api/activity_data', methods=['GET'])
-def api_activity_data():
-    """API endpoint to retrieve aggregated results over X days from current date."""
-    try:
-        days_str = request.args.get('days', '30')
-        num_days = int(days_str)
-        if num_days <= 0:
-            return jsonify({"error": "Number of days must be positive."}), 400
-    except ValueError:
-        return jsonify({"error": "Invalid 'days' parameter. Must be an integer."}), 400
-
-    end_date_obj = date.today()
-    # For testing with provided sample data date:
-    # end_date_obj = date(2025, 5, 6) 
-    start_date_obj = end_date_obj - timedelta(days=num_days - 1)
-
-    aggregated_stats = get_stats_for_date_range(start_date_obj, end_date_obj)
-    
-    if "error" in aggregated_stats: # Should not happen if get_daily_stats handles errors
-        return jsonify(aggregated_stats), 500 
+    if "error" in processed_data and processed_data["error"] not in ["No valid log entries found in the data file."]: # Allow "no logs" error to render page
+        return render_template('error.html', message=processed_data["error"])
         
-    return jsonify(aggregated_stats)
-
+    return render_template('index.html', **processed_data)
 
 if __name__ == '__main__':
-    # Create dummy logs directory and file if they don't exist for easy startup
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
-    if not os.path.exists(LOG_FILE_PATH):
-        with open(LOG_FILE_PATH, 'w', encoding='utf-8') as f:
-            # Sample data for today (assuming today is 2025-05-06 for this example)
-            # To make this work for the actual current day, these timestamps would need to be dynamic
-            # or the user must have current logs.
-            # For now, using the example date.
-            today_str = date.today().strftime("%Y-%m-%d") # Actual today
-            yesterday_str = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+    logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+        print(f"Created directory: {logs_dir}")
 
-            # Using fixed dates from example for consistency if user runs this script later
-            fixed_today_example_date = "2025-05-06"
-            fixed_yesterday_example_date = "2025-05-05"
-
-            f.write(f"{fixed_today_example_date} 00:05:33,873 - window_info: {json.dumps({'window_title': 'Gemini — Mozilla Firefox', 'process_name': 'firefox.exe', 'active_time': 637, 'pid': 20908, 'timestamp': f'{fixed_today_example_date}T00:05:33.530234'})}\n")
-            f.write(f"{fixed_today_example_date} 00:05:35,547 - ai_analysis: {json.dumps({'analysis': {'is_distracted': False, 'reason': 'Using Firefox.'}, 'token_usage': {}, 'analysis_type': 'window_title'})}\n")
-            f.write(f"{fixed_today_example_date} 00:13:53,585 - window_info: {json.dumps({'window_title': 'app.py', 'process_name': 'Code.exe', 'active_time': 26, 'pid': 932, 'timestamp': f'{fixed_today_example_date}T00:13:53.257547'})}\n")
-            f.write(f"{fixed_today_example_date} 00:13:54,907 - ai_analysis: {json.dumps({'analysis': {'is_distracted': False, 'reason': 'Coding.'}, 'token_usage': {}, 'analysis_type': 'window_title'})}\n")
-            f.write(f"{fixed_today_example_date} 00:20:34,343 - window_durations: {json.dumps({'Gemini — Mozilla Firefox': {'total': 13740, 'consecutive': 3680}, 'app.py': {'total': 20000, 'consecutive': 1000}, 'YouTube — Mozilla Firefox': {'total': 5000, 'consecutive': 5000}})}\n")
-            f.write(f"{fixed_today_example_date} 00:53:45,523 - window_info: {json.dumps({'window_title': 'YouTube — Mozilla Firefox', 'process_name': 'firefox.exe', 'active_time': 200, 'pid': 20908, 'timestamp': f'{fixed_today_example_date}T00:53:45.176305'})}\n")
-            f.write(f"{fixed_today_example_date} 00:53:47,017 - ai_analysis: {json.dumps({'analysis': {'is_distracted': True, 'reason': 'Its bloody YouTube, mate.'}, 'token_usage': {}, 'analysis_type': 'window_title'})}\n")
-            
-            # Sample data for yesterday
-            f.write(f"{fixed_yesterday_example_date} 10:00:00,000 - window_info: {json.dumps({'window_title': 'Outlook', 'process_name': 'outlook.exe', 'active_time': 1200, 'pid': 1000, 'timestamp': f'{fixed_yesterday_example_date}T10:00:00.000000'})}\n")
-            f.write(f"{fixed_yesterday_example_date} 10:00:00,000 - ai_analysis: {json.dumps({'analysis': {'is_distracted': False, 'reason': 'Work email.'}, 'token_usage': {}, 'analysis_type': 'window_title'})}\n")
-            f.write(f"{fixed_yesterday_example_date} 11:00:00,000 - window_durations: {json.dumps({'Outlook': {'total': 3600000, 'consecutive': 0}, 'Excel.exe': {'total': 1800000, 'consecutive': 0}})}\n")
-            app.logger.info(f"Created dummy log file at {LOG_FILE_PATH}")
-
+    templates_dir = os.path.join(os.path.dirname(__file__), 'templates')
+    if not os.path.exists(templates_dir):
+        os.makedirs(templates_dir)
+        print(f"Created directory: {templates_dir}")
+        # Basic error.html (ensure it uses Space Mono too if you want consistency)
+        with open(os.path.join(templates_dir, 'error.html'), 'w') as f:
+            f.write("""
+            <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Error</title><script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://fonts.googleapis.com/css2?family=Space+Mono&display=swap" rel="stylesheet">
+            <style> body { font-family: 'Space Mono', monospace; background-color: #111827; color: #e5e7eb; } </style></head>
+            <body class="flex items-center justify-center min-h-screen"><div class="bg-red-800 p-8 rounded-lg shadow-xl text-center">
+            <h1 class="text-4xl mb-4">Error</h1><p class="text-xl">{{ message }}</p>
+            <a href="/" class="mt-6 inline-block bg-yellow-400 text-black px-6 py-2 rounded hover:bg-yellow-500">Go Home</a>
+            </div></body></html>
+            """)
     app.run(debug=True)

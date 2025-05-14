@@ -20,15 +20,10 @@ class VisionAnalyzer:
         return f"""
         Window Title: {window_info['window_title']}
         Process Name: {window_info['process_name']}
-        Active Time: {window_info['active_time']} sec
         """
     
     def analyze_window_title(self, window_info, focus_description=None):
         """Analyze window title and process name to determine if it's distracting"""
-        i = SystemMonitor()
-        i.update_window_info()
-        i.pretty_print_window_times(max_items=5)
-        print("==========")
         if focus_description:
             prompt = f"""You are a productivity assistant. The user is trying to focus on: {focus_description}
 
