@@ -23,6 +23,7 @@ Todo:
 - alert for bed time
 - fix focus mode
 - add focus mode to web app
+- add work preset in focus mode
 
 Modes:
 
